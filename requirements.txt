@@ -1,0 +1,6 @@
+Plaintext
+fastapi
+uvicorn
+openpyxl
+google-api-python-client
+google-auth
