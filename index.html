@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>할렐루야 찬양대 좌석 배치</title>
+  <style>
+    body { font-family: '맑은 고딕', sans-serif; padding: 15px; background: #f8f9fa; margin: 0; }
+    .card { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); max-width: 600px; margin: auto; }
+    .form-group { display: flex; gap: 10px; margin-bottom: 15px; }
+    input, button { padding: 10px; font-size: 16px; border-radius: 6px; border: 1px solid #ccc; }
+    button { background: #007bff; color: white; border: none; font-weight: bold; cursor: pointer; flex: 1; }
+    .seat-row { margin-top: 12px; padding: 12px; background: #f1f3f5; border-radius: 8px; line-height: 1.6; }
+    .S { color: #d9534f; font-weight: bold; }
+    .A { color: #28a745; font-weight: bold; }
+    .T { color: #007bff; font-weight: bold; }
+    .B { color: #6f42c1; font-weight: bold; }
+    .ORG { color: #fd7e14; font-weight: bold; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h2>🎵 할렐루야 찬양대 좌석 배치</h2>
+    <div class="form-group">
+      <input type="date" id="dateInput" value="2026-08-30" style="flex:2;">
+      <input type="number" id="seatsInput" value="67" style="flex:1;">
+    </div>
+    <button onclick="run()">좌석 자동배치 실행</button>
+    
+    <div id="result" style="margin-top:20px;"></div>
+  </div>
+
+  <script>
+    // Render에서 찾으신 본인의 API 주소로 변경해 주세요
+    const API_URL = "https://hcss-backend.onrender.com/api/allocate";
+
+    async function run() {
+      const resDiv = document.getElementById('result');
+      resDiv.innerHTML = "<p>⏳ 출석부를 확인하고 배치 중입니다...</p>";
+
+      try {
+        const res = await fetch(API_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            date_str: document.getElementById('dateInput').value,
+            total_seats: parseInt(document.getElementById('seatsInput').value)
+          })
+        });
+
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail);
+
+        let html = `<h4>📊 출석 대원: ${data.attending_count}명</h4>`;
+        
+        for (let i = 3; i >= 0; i--) {
+          const row = data.rows[i];
+          html += `<div class="seat-row"><strong>[${i+1}열] (${row.length}명)</strong><br>`;
+          row.forEach(([part, name]) => {
+            html += `<span class="${part}">[${part}]${name}</span> `;
+          });
+          html += `</div>`;
+        }
+
+        const leftA = data.leftover.A || [];
+        html += `<div style="margin-top:15px; color:#d9534f;"><strong>📌 성도석 이동 (알토):</strong> ${leftA.length ? leftA.join(', ') : '없음'}</div>`;
+        
+        resDiv.innerHTML = html;
+      } catch (err) {
+        resDiv.innerHTML = `<p style="color:red;">오류: ${err.message}</p>`;
+      }
+    }
+  </script>
+</body>
+</html>
