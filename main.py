@@ -21,7 +21,7 @@ app.add_middleware(
 
 # 구글 드라이브 및 인증 설정
 SCOPES = ["https://www.googleapis.com/auth/drive.readonly"]
-DRIVE_FILE_NAME = "26년 할렐루야 출석부.xlsx"
+DRIVE_FILE_NAME = "할렐루야 출석부.xlsx"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 SERVICE_ACCOUNT_FILE = os.path.join(BASE_DIR, "service_account.json")
 
