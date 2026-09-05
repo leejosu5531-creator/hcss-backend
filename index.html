@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>할렐루야 찬양대 좌석 배치</title>
+  <style>
+    body { font-family: '맑은 고딕', sans-serif; padding: 15px; background: #f8f9fa; margin: 0; }
+    .card { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); max-width: 650px; margin: auto; }
+    .form-group { display: flex; gap: 10px; margin-bottom: 15px; }
+    input, button { padding: 10px; font-size: 16px; border-radius: 6px; border: 1px solid #ccc; }
+    button { background: #007bff; color: white; border: none; font-weight: bold; cursor: pointer; flex: 1; }
+    
+    .info-box { background: #e7f5ff; padding: 12px; border-radius: 8px; margin-bottom: 15px; border: 1px solid #74c0fc; }
+    .seat-row { margin-top: 12px; padding: 12px; background: #f1f3f5; border-radius: 8px; line-height: 1.8; }
+    .seat-row h4 { margin: 0 0 8px 0; color: #333; font-size: 15px; }
+    
+    /* 파트별 동일 색상 적용 */
+    .S { color: #d9534f; font-weight: bold; }
+    .A { color: #28a745; font-weight: bold; }
+    .T { color: #007bff; font-weight: bold; }
+    .B { color: #6f42c1; font-weight: bold; }
+    .ORG { color: #e83e8c; font-weight: bold; }
+    
+    .person-tag { display: inline; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h2>🎵 할렐루야 찬양대 좌석 배치</h2>
+    <div class="form-group">
+      <input type="date" id="dateInput" style="flex:2;">
+      <input type="number" id="seatsInput" value="67" style="flex:1;" placeholder="총 좌석 수">
+    </div>
+    <button onclick="run()">좌석 자동배치 실행</button>
+    
+    <div id="result" style="margin-top:20px;"></div>
+  </div>
+
+  <script>
+    document.getElementById("dateInput").value = new Date().toLocaleDateString("en-CA");
+    const API_URL = "https://hcss-backend.onrender.com/api/allocate";
+
+    async function run() {
+      const resultDiv = document.getElementById("result");
+      const selectedDate = document.getElementById("dateInput").value;
+      const totalSeats = parseInt(document.getElementById("seatsInput").value) || 67;
+
+      resultDiv.innerHTML = "<p style='color:#007bff; font-weight:bold;'>구글 드라이브에서 출석부를 읽어 좌석을 배치 중입니다...</p>";
+
+      try {
+        const response = await fetch(API_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            date_str: selectedDate,
+            total_seats: totalSeats
+          })
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+          const p = data.attending_by_part || {};
+          
+          let html = `
+            <div class="info-box">
+              <p style="margin:0 0 5px 0;"><strong>📅 기준 날짜:</strong> ${data.date}</p>
+              <p style="margin:0;"><strong>👥 출석인원 :</strong> 총 ${data.attending_count}명 (S ${p.S || 0}, A ${p.A || 0}, T ${p.T || 0}, B ${p.B || 0})</p>
+            </div>
+          `;
+
+          // 각 열별 배치 시각화
+          let currentPart = null;
+
+          data.rows.forEach((row, idx) => {
+            const counts = data.row_part_counts ? data.row_part_counts[idx] : {};
+            const target = data.row_targets ? data.row_targets[idx] : 0;
+            
+            const partParts = [];
+            if (counts.B > 0) partParts.push(`B ${counts.B}명`);
+            if (counts.T > 0) partParts.push(`T ${counts.T}명`);
+            if (counts.A > 0) partParts.push(`A ${counts.A}명`);
+            if (counts.S > 0) partParts.push(`S ${counts.S}명`);
+            if (counts.ORG > 0) partParts.push(`오르간 1명`);
+
+            // 목표 인원을 ( ) 안에 표시
+            const headerText = `[${idx + 1}열] ${partParts.join(', ')} (목표 ${target}명)`;
+
+            html += `<div class="seat-row"><h4>${headerText}</h4>`;
+            
+            if (row.length === 0) {
+              html += `<span style="color:#888;">배치된 인원이 없습니다.</span>`;
+            } else {
+              // 행 간 전환 시 이전 파트 상태 초기화
+              currentPart = null;
+
+              const tags = row.map(item => {
+                let part = item[0];
+                const name = item[1];
+
+                // 백엔드에서 파트코드가 연속되어 빈값("")으로 올 경우 이전 파트 색상 유지
+                if (part === "") {
+                  part = currentPart;
+                } else {
+                  currentPart = part;
+                }
+
+                return `<span class="person-tag ${part}">${name}</span>`;
+              });
+              html += tags.join(", ");
+            }
+            html += `</div>`;
+          });
+
+          // 성도석 안내
+          const sungdoseokList = [];
+          if (data.sungdoseok && data.sungdoseok.A) {
+            sungdoseokList.push(...data.sungdoseok.A);
+          } else if (data.leftover && data.leftover.A) {
+            sungdoseokList.push(...data.leftover.A);
+          }
+
+          if (sungdoseokList.length > 0) {
+            const sungdoseokTags = sungdoseokList.map(name => `<span class="person-tag A">${name}</span>`);
+            html += `<div class="seat-row" style="background:#fff3bf;"><h4 style="color:#d97706;">🪑 성도석</h4>`;
+            html += sungdoseokTags.join(", ");
+            html += `</div>`;
+          }
+
+          resultDiv.innerHTML = html;
+        } else {
+          resultDiv.innerHTML = `<p style="color:red;"><strong>오류 발생:</strong> ${data.detail || "알 수 없는 오류"}</p>`;
+        }
+      } catch (error) {
+        resultDiv.innerHTML = `<p style="color:red;"><strong>통신 에러:</strong> ${error.message}</p>`;
+      }
+    }
+  </script>
+</body>
+</html>
