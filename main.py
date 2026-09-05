@@ -208,7 +208,7 @@ def run_allocation(req: RequestModel):
             "rows": rows,
             "leftover": leftover
         }
-except Exception as e:
+    except Exception as e:
         import traceback
         traceback.print_exc()  # Render 로그에 진짜 오류를 적어줌
         raise HTTPException(status_code=400, detail=str(e))
