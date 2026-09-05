@@ -15,6 +15,7 @@ app = FastAPI(title="화원교회 찬양대 좌석 배치 API")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
