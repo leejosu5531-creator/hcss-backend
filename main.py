@@ -1,205 +1,62 @@
-# -*- coding: utf-8 -*-
 import os
 import datetime as dt
+import logging
+import traceback
 from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from google.oauth2.service_account import Credentials
-from googleapiclient.discovery import build
-from googleapiclient.http import MediaIoBaseDownload
-from openpyxl import load_workbook
+
+# 1. 상세 디버깅을 위한 로깅 설정
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("allocation_debug")
 
 app = FastAPI(title="화원교회 찬양대 좌석 배치 API")
 
-# 스마트폰/웹 브라우저 접속 허용 (CORS)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# 구글 드라이브 및 인증 설정
-SCOPES = ["https://www.googleapis.com/auth/drive.readonly"]
-DRIVE_FILE_NAME = "할렐루야 출석부.xlsx"
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-SERVICE_ACCOUNT_FILE = os.path.join(BASE_DIR, "service_account.json")
-
-def google_drive_service():
-    creds = Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
-    return build("drive", "v3", credentials=creds)
-
-def find_drive_file(service):
-    q = f"name = '{DRIVE_FILE_NAME.replace('\'', '\\\'')}' and trashed = false"
-    r = service.files().list(q=q, spaces="drive", fields="files(id,name)").execute()
-    fs = r.get("files", [])
-    if not fs:
-        raise FileNotFoundError("출석부 파일을 찾지 못했습니다.")
-    return fs[0]
-
-def download_excel(service, file_id, dest):
-    with open(dest, "wb") as fh:
-        d = MediaIoBaseDownload(fh, service.files().get_media(fileId=file_id))
-        done = False
-        while not done:
-            _, done = d.next_chunk()
-
-# --- 기존 HCSS 핵심 데이터 처리 로직 ---
-
-def as_date(val):
-    if isinstance(val, dt.datetime):
-        return val.date()
-    if isinstance(val, dt.date):
-        return val
-    if isinstance(val, str):
-        val = val.strip()
-        for fmt in ("%Y-%m-%d", "%Y.%m.%d", "%Y/%m/%d"):
-            try:
-                return dt.datetime.strptime(val, fmt).date()
-            except ValueError:
-                pass
-    return None
-
-def read_attendance(excel_path, target_date):
-    wb = load_workbook(excel_path, data_only=True)
-    ws = wb.active
-
-    date_col = None
-    for col in range(5, ws.max_column + 1):
-        v = ws.cell(row=3, column=col).value
-        d = as_date(v)
-        if d and d == target_date:
-            date_col = col
-            break
-
-    if not date_col:
-        raise ValueError(f"해당 날짜({target_date})를 출석부 3행에서 찾을 수 없습니다.")
-
-    people = {"S": [], "A": [], "T": [], "B": []}
-
-    for row in range(4, ws.max_row + 1):
-        p_val = ws.cell(row=row, column=1).value
-        n_val = ws.cell(row=row, column=2).value
-        c_val = ws.cell(row=row, column=date_col).value
-
-        part = str(p_val).strip().upper() if p_val else ""
-        name = str(n_val).strip() if n_val else ""
-
-        if part in people and name:
-            is_present = False
-            if c_val is True:
-                is_present = True
-            elif isinstance(c_val, str):
-                v = c_val.strip().upper()
-                if v in ("O", "1", "TRUE", "Y", "○", "●"):
-                    is_present = True
-            elif isinstance(c_val, (int, float)) and c_val == 1:
-                is_present = True
-
-            if is_present:
-                people[part].append(name)
-
-    return people
-
-def row_targets(N):
-    if N == 67: return [15, 17, 17, 18]
-    if N == 68: return [15, 17, 18, 18]
-    if N == 69: return [15, 18, 18, 18]
-    if N == 70: return [16, 18, 18, 18]
-    
-    base = N // 4
-    rem = N % 4
-    t = [base]*4
-    for i in range(rem):
-        t[3 - i] += 1
-    return t
-
-def allocate(people, total_seats):
-    s_lst, a_lst = people["S"], people["A"]
-    t_lst, b_lst = people["T"], people["B"]
-
-    rt = row_targets(total_seats)
-    organ_row = 1  # 2열 오르간
-
-    a_req_org = max(0, 3 - len(s_lst))
-    a_in_org = a_lst[:a_req_org]
-    a_leftover = a_lst[a_req_org:]
-
-    org_seats = []
-    org_seats.extend([("S", n) for n in s_lst])
-    org_seats.extend([("A", n) for n in a_in_org])
-
-    rows = [[], [], [], []]
-    leftovers = {"A": []}
-
-    # 1열 배치
-    cap1 = rt[0]
-    take_t1 = min(len(t_lst), cap1)
-    rows[0].extend([("T", n) for n in t_lst[:take_t1]])
-    t_rem = t_lst[take_t1:]
-
-    rem1 = cap1 - len(rows[0])
-    take_b1 = min(len(b_lst), rem1)
-    rows[0].extend([("B", n) for n in b_lst[:take_b1]])
-    b_rem = b_lst[take_b1:]
-
-    # 2열 배치
-    cap2 = rt[1]
-    rows[1].extend(org_seats)
-    rem2 = cap2 - len(rows[1])
-    if rem2 > 0:
-        take_b2 = min(len(b_rem), rem2)
-        rows[1].extend([("B", n) for n in b_rem[:take_b2]])
-        b_rem = b_rem[take_b2:]
-
-    # 3열, 4열 배치
-    for r_idx in [2, 3]:
-        cap = rt[r_idx]
-        if t_rem:
-            take_t = min(len(t_rem), cap - len(rows[r_idx]))
-            rows[r_idx].extend([("T", n) for n in t_rem[:take_t]])
-            t_rem = t_rem[take_t:]
-        
-        rem = cap - len(rows[r_idx])
-        if rem > 0 and b_rem:
-            take_b = min(len(b_rem), rem)
-            rows[r_idx].extend([("B", n) for n in b_rem[:take_b]])
-            b_rem = b_rem[take_b:]
-
-    # 남은 알토 처리
-    for r_idx in [2, 3]:
-        rem = rt[r_idx] - len(rows[r_idx])
-        if rem > 0 and a_leftover:
-            take_a = min(len(a_leftover), rem)
-            rows[r_idx].extend([("A", n) for n in a_leftover[:take_a]])
-            a_leftover = a_leftover[take_a:]
-
-    leftovers["A"] = a_leftover
-    return rows, leftovers, rt, organ_row
-
-# --- API 엔드포인트 ---
-
-class RequestModel(BaseModel):
-    date_str: str
-    total_seats: int = 67
+# [기존 Pydantic 모델 및 설정 부분 유지]
+# ...
 
 @app.post("/api/allocate")
 def run_allocation(req: RequestModel):
+    logger.info("=== [1/6] 좌석 배치 요청 수신 ===")
+    logger.info(f"전달받은 요청 데이터: date_str={req.date_str}, total_seats={req.total_seats}")
+
     try:
+        # 1. 날짜 파싱 점검
+        logger.info("=== [2/6] 날짜 데이터 변환 시도 ===")
         target = dt.date.fromisoformat(req.date_str)
-        service = google_drive_service()
-        file_info = find_drive_file(service)
+        logger.info(f"변환된 target 날짜: {target}")
+
+        # 2. 인증 파일 및 Google Drive API 연결 점검
+        logger.info("=== [3/6] Google Drive 서비스 인증 시도 ===")
+        logger.info(f"인증 파일 경로 확인: {SERVICE_ACCOUNT_FILE}")
+        if not os.path.exists(SERVICE_ACCOUNT_FILE):
+            logger.error(f"❌ 인증 파일이 존재하지 않습니다: {SERVICE_ACCOUNT_FILE}")
+            raise FileNotFoundError(f"인증 파일 없음: {SERVICE_ACCOUNT_FILE}")
         
+        service = google_drive_service()
+        logger.info("Google Drive 서비스 생성 성공")
+
+        # 3. 드라이브 파일 검색 점검
+        logger.info(f"=== [4/6] 드라이브 파일 검색 시도 ('{DRIVE_FILE_NAME}') ===")
+        file_info = find_drive_file(service)
+        logger.info(f"찾은 파일 정보: ID={file_info.get('id')}, Name={file_info.get('name')}")
+
+        # 4. 엑셀 파일 다운로드 점검
+        logger.info("=== [5/6] 엑셀 파일 임시 다운로드 시도 ===")
         tmp_path = os.path.join(BASE_DIR, "_attendance_temp.xlsx")
         download_excel(service, file_info["id"], tmp_path)
-        
+        logger.info(f"임시 파일 저장 완료: {tmp_path}")
+
+        # 5. 출석 데이터 읽기 및 배정 로직 점검
+        logger.info("=== [6/6] 출석 데이터 분석 및 좌석 배치 연산 시도 ===")
         people = read_attendance(tmp_path, target)
         rows, leftover, rt, org = allocate(people, req.total_seats)
-        
+
+        # 임시 파일 삭제
         if os.path.exists(tmp_path):
             os.remove(tmp_path)
-            
+            logger.info("임시 파일 삭제 완료")
+
+        logger.info("=== ✅ 좌석 배치 성공적으로 완료됨 ===")
         return {
             "status": "success",
             "date": str(target),
@@ -209,7 +66,12 @@ def run_allocation(req: RequestModel):
             "rows": rows,
             "leftover": leftover
         }
+
     except Exception as e:
-        import traceback
-        traceback.print_exc()  # Render 로그에 진짜 오류를 적어줌
+        # 모든 예외 발생 시 상세 Traceback을 Render Logs에 출력
+        logger.error("❌ 처리 중 오류(Exception) 발생!")
+        logger.error(f"오류 메시지: {str(e)}")
+        logger.error("=== 상세 에러 스택 트레이스 (Traceback) ===")
+        logger.error(traceback.format_exc())
+        
         raise HTTPException(status_code=400, detail=str(e))
