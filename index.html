@@ -65,3 +65,17 @@
             html += `<div class="seat-row"><b>${idx + 1}열:</b> ${row.join(', ')}</div>`;
           });
         }
+
+        if (data.leftover && data.leftover.length > 0) {
+          html += `<div class="seat-row" style="background:#fff3cd;"><b>남은 인원:</b> ${data.leftover.join(', ')}</div>`;
+        }
+
+        resDiv.innerHTML = html;
+
+      } catch (err) {
+        resDiv.innerHTML = `<div class="error-msg">❌ <b>오류 발생:</b> ${err.message}</div>`;
+      }
+    }
+  </script>
+</body>
+</html>
