@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>할렐루야 찬양대 좌석 배치</title>
+  <style>
+    body { font-family: '맑은 고딕', sans-serif; padding: 15px; background: #f8f9fa; margin: 0; }
+    .card { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); max-width: 600px; margin: auto; }
+    .form-group { display: flex; gap: 10px; margin-bottom: 15px; }
+    input, button { padding: 10px; font-size: 16px; border-radius: 6px; border: 1px solid #ccc; }
+    button { background: #007bff; color: white; border: none; font-weight: bold; cursor: pointer; flex: 1; }
+    .seat-row { margin-top: 12px; padding: 12px; background: #f1f3f5; border-radius: 8px; line-height: 1.6; }
+    .S { color: #d9534f; font-weight: bold; }
+    .A { color: #28a745; font-weight: bold; }
+    .T { color: #007bff; font-weight: bold; }
+    .B { color: #6f42c1; font-weight: bold; }
+    .ORG { color: #fd7e14; font-weight: bold; }
+
+    .edit-tools { display:flex; gap:8px; flex-wrap:wrap; margin:12px 0; }
+    .edit-tools button { flex:0 0 auto; }
+    .seat-grid { display:flex; flex-direction:column; gap:10px; }
+    .drag-row { padding:10px; background:#f1f3f5; border-radius:8px; }
+    .drag-row-title { font-weight:800; margin-bottom:7px; }
+    .drag-seats { display:flex; flex-wrap:wrap; gap:6px; min-height:42px; }
+    .drag-seat {
+      min-width:62px; padding:7px 8px; border-radius:6px; color:white;
+      font-size:13px; font-weight:700; text-align:center; cursor:grab;
+      user-select:none; touch-action:none; box-sizing:border-box;
+    }
+    .drag-seat:active { cursor:grabbing; }
+    .drag-seat.empty {
+      background:#fff; border:1px dashed #ced4da; color:#adb5bd;
+      cursor:default; min-width:62px;
+    }
+    .drag-seat.S { background:#d9534f; }
+    .drag-seat.A { background:#28a745; }
+    .drag-seat.T { background:#007bff; }
+    .drag-seat.B { background:#6f42c1; }
+    .drag-seat.ORG { background:#e83e8c; cursor:not-allowed; }
+    .drag-seat.valid-target { outline:3px solid #20c997; outline-offset:1px; }
+    .drag-seat.dragging { opacity:.45; }
+    .edit-status {
+      margin:8px 0; padding:8px 10px; border-radius:6px;
+      background:#fff3cd; color:#664d03; font-size:13px; display:none;
+    }
+    .edit-status.on { display:block; }
+    .help-box {
+      margin-top:10px; padding:9px 10px; background:#f8f9fa;
+      border:1px solid #dee2e6; border-radius:7px; font-size:12px; color:#555;
+    }
+
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h2>🎵 할렐루야 찬양대 좌석 배치</h2>
+    <div class="form-group">
+      <input type="date" id="dateInput" value="2026-08-30" style="flex:2;">
+      <input type="number" id="seatsInput" value="67" style="flex:1;">
+    </div>
+    <button onclick="run()">좌석 자동배치 실행</button>
+    
+    <div class="edit-tools no-print">
+      <button id="editBtn" onclick="toggleEdit()" disabled>수동 좌석조정</button>
+      <button id="resetBtn" class="secondary" onclick="resetEdit()" disabled>자동배치로 되돌리기</button>
+      <button id="doneBtn" onclick="finishEdit()" disabled>조정 완료</button>
+    </div>
+    <div id="editStatus" class="edit-status no-print"></div>
+    <div id="result" style="margin-top:20px;"></div>
+  </div>
+
+
+  <script>
+    const API_URL = "https://hcss-backend.onrender.com/api/allocate";
+    let autoRows = null;
+    let editRows = null;
+    let editing = false;
+    let dragFrom = null;
+
+    document.getElementById("dateInput").value =
+      new Date().toLocaleDateString("en-CA");
+
+    function esc(s) {
+      return String(s ?? "").replace(/[&<>"']/g, c => ({
+        "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
+      }[c]));
+    }
+
+    function partName(part) {
+      return {S:"소프라노",A:"알토",T:"테너",B:"베이스",ORG:"오르간"}[part] || part;
+    }
+
+    function setButtons(hasData) {
+      document.getElementById("editBtn").disabled = !hasData;
+      document.getElementById("resetBtn").disabled = !hasData;
+      document.getElementById("doneBtn").disabled = !editing;
+    }
+
+    function setStatus(msg, on=true) {
+      const el = document.getElementById("editStatus");
+      el.textContent = msg;
+      el.classList.toggle("on", on);
+    }
+
+    function cloneRows(rows) {
+      return (rows || []).map(row => (row || []).map(x => [x[0], x[1]]));
+    }
+
+    function renderRows(rows) {
+      const result = document.getElementById("result");
+      if (!rows) return;
+
+      let html = '<div class="seat-grid">';
+      rows.forEach((row, r) => {
+        html += `<div class="drag-row">
+          <div class="drag-row-title">[${r+1}열] (${row.length}명)</div>
+          <div class="drag-seats" data-row="${r}">`;
+
+        row.forEach((item, i) => {
+          const [part, name] = item;
+          const isOrg = part === "ORG";
+          html += `<div class="drag-seat ${esc(part)}"
+                    data-row="${r}" data-index="${i}"
+                    ${isOrg ? "" : 'draggable="true"'}
+                    title="${isOrg ? "오르간은 이동할 수 없습니다." : partName(part) + " · 드래그하여 같은 파트 자리와 교환"}>${esc(isOrg ? "↑ 오르간" : name)}</div>`;
+        });
+
+        html += `</div></div>`;
+      });
+      html += '</div>';
+      html += `<div class="help-box no-print">
+        ${editing
+          ? "💡 이름을 드래그하여 같은 파트의 다른 자리로 옮기세요. 다른 파트 자리에는 놓을 수 없습니다. 점유된 같은 파트 자리에서는 두 사람의 자리가 서로 교환됩니다."
+          : "자동배치 결과입니다. '수동 좌석조정'을 누르면 이름을 드래그해서 같은 파트끼리 자리를 바꿀 수 있습니다."}
+      </div>`;
+      result.innerHTML = html;
+
+      if (editing) attachDnD();
+    }
+
+    function attachDnD() {
+      document.querySelectorAll(".drag-seat[draggable='true']").forEach(el => {
+        el.addEventListener("dragstart", onDragStart);
+        el.addEventListener("dragend", onDragEnd);
+        el.addEventListener("dragover", onDragOver);
+        el.addEventListener("drop", onDrop);
+
+        // Pointer Events: 스마트폰/태블릿 터치 지원.
+        el.addEventListener("pointerdown", onPointerDown);
+      });
+      document.querySelectorAll(".drag-seat:not([draggable='true'])").forEach(el => {
+        el.addEventListener("dragover", e => e.preventDefault());
+      });
+    }
+
+    function onDragStart(e) {
+      const el = e.currentTarget;
+      dragFrom = { r:+el.dataset.row, i:+el.dataset.index };
+      el.classList.add("dragging");
+      e.dataTransfer.effectAllowed = "move";
+      e.dataTransfer.setData("text/plain", JSON.stringify(dragFrom));
+      highlightTargets(dragFrom);
+    }
+
+    function onDragEnd() {
+      document.querySelectorAll(".drag-seat").forEach(x =>
+        x.classList.remove("dragging","valid-target"));
+      dragFrom = null;
+    }
+
+    function onDragOver(e) {
+      e.preventDefault();
+      const el = e.currentTarget;
+      if (!dragFrom) return;
+      const to = { r:+el.dataset.row, i:+el.dataset.index };
+      if (isValidMove(dragFrom, to)) {
+        e.dataTransfer.dropEffect = "move";
+        el.classList.add("valid-target");
+      }
+    }
+
+    function onDrop(e) {
+      e.preventDefault();
+      const el = e.currentTarget;
+      if (!dragFrom) return;
+      moveSeat(dragFrom.r, dragFrom.i, +el.dataset.row, +el.dataset.index);
+      onDragEnd();
+    }
+
+    function highlightTargets(from) {
+      const src = editRows[from.r]?.[from.i];
+      if (!src || src[0] === "ORG") return;
+      document.querySelectorAll(".drag-seat").forEach(el => {
+        const to = { r:+el.dataset.row, i:+el.dataset.index };
+        if (isValidMove(from, to)) el.classList.add("valid-target");
+      });
+    }
+
+    function isValidMove(from, to) {
+      if (!editRows?.[from.r]?.[from.i] || !editRows?.[to.r]?.[to.i]) return false;
+      const a = editRows[from.r][from.i];
+      const b = editRows[to.r][to.i];
+      if (a[0] === "ORG" || b[0] === "ORG") return false;
+      return a[0] === b[0] && !(from.r === to.r && from.i === to.i);
+    }
+
+    function moveSeat(fr, fi, tr, ti) {
+      if (!isValidMove({r:fr,i:fi},{r:tr,i:ti})) {
+        setStatus("⚠ 같은 파트의 좌석끼리만 이동할 수 있습니다.");
+        return;
+      }
+      const tmp = editRows[fr][fi];
+      editRows[fr][fi] = editRows[tr][ti];
+      editRows[tr][ti] = tmp;
+      renderRows(editRows);
+      setStatus("✏️ 좌석이 조정되었습니다. 계속 조정하거나 '조정 완료'를 누르세요.");
+    }
+
+    // 모바일 터치용 간단한 드래그: 길게 누른 뒤 다른 좌석을 터치하면 교환.
+    let pointerCandidate = null;
+    let longPressTimer = null;
+
+    function onPointerDown(e) {
+      if (!editing || e.pointerType === "mouse") return;
+      const el = e.currentTarget;
+      pointerCandidate = { r:+el.dataset.row, i:+el.dataset.index };
+      clearTimeout(longPressTimer);
+      longPressTimer = setTimeout(() => {
+        dragFrom = pointerCandidate;
+        highlightTargets(dragFrom);
+        setStatus("📱 이동할 같은 파트의 좌석을 터치하세요.");
+      }, 350);
+    }
+
+    document.addEventListener("pointerup", e => {
+      clearTimeout(longPressTimer);
+      if (!editing || !dragFrom || e.pointerType === "mouse") return;
+      const target = document.elementFromPoint(e.clientX, e.clientY);
+      const seat = target?.closest?.(".drag-seat");
+      if (seat) {
+        moveSeat(dragFrom.r, dragFrom.i, +seat.dataset.row, +seat.dataset.index);
+      }
+      document.querySelectorAll(".drag-seat").forEach(x =>
+        x.classList.remove("dragging","valid-target"));
+      dragFrom = null;
+      pointerCandidate = null;
+    });
+
+    function toggleEdit() {
+      if (!autoRows) return;
+      editing = true;
+      editRows = cloneRows(autoRows);
+      setButtons(true);
+      setStatus("✏️ 수동 좌석조정 모드입니다.");
+      renderRows(editRows);
+    }
+
+    function resetEdit() {
+      if (!autoRows) return;
+      editing = true;
+      editRows = cloneRows(autoRows);
+      setStatus("↩ 자동배치 결과로 되돌렸습니다.");
+      renderRows(editRows);
+    }
+
+    function finishEdit() {
+      if (!editRows) return;
+      editing = false;
+      autoRows = cloneRows(editRows);
+      setButtons(true);
+      setStatus("✅ 좌석 조정 완료. 현재 화면의 배치가 최종 수동 배치입니다.");
+      renderRows(editRows);
+    }
+
+    async function run() {
+      const resDiv = document.getElementById("result");
+      const btn = document.querySelector('button[onclick="run()"]');
+      const date = document.getElementById("dateInput").value;
+      const seats = parseInt(document.getElementById("seatsInput").value) || 67;
+
+      btn.disabled = true;
+      setButtons(false);
+      setStatus("", false);
+      resDiv.innerHTML = "<p>⏳ 출석부를 확인하고 자동배치 중입니다...</p>";
+
+      try {
+        const res = await fetch(API_URL, {
+          method:"POST",
+          headers:{"Content-Type":"application/json"},
+          body:JSON.stringify({
+            date_str: date,
+            total_seats: seats
+          })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || "서버 오류");
+
+        autoRows = cloneRows(data.rows);
+        editRows = cloneRows(data.rows);
+        editing = false;
+
+        let html = `<h4>📊 출석 대원: ${data.attending_count}명</h4>`;
+        if (data.attending_by_part) {
+          const p = data.attending_by_part;
+          html += `<p>S ${p.S||0}명 · A ${p.A||0}명 · T ${p.T||0}명 · B ${p.B||0}명</p>`;
+        }
+        renderRows(autoRows);
+        const old = resDiv.innerHTML;
+        resDiv.innerHTML = html;
+        const grid = document.createElement("div");
+        grid.innerHTML = old;
+        // renderRows가 result를 다시 그리므로 요약을 앞에 다시 삽입
+        resDiv.insertAdjacentHTML("afterbegin", html);
+        setButtons(true);
+        setStatus("자동배치 완료. 필요하면 '수동 좌석조정'을 눌러 이름을 드래그하세요.", true);
+
+      } catch (err) {
+        resDiv.innerHTML = `<p style="color:red;"><strong>오류:</strong> ${esc(err.message)}</p>`;
+        setButtons(false);
+      } finally {
+        btn.disabled = false;
+      }
+    }
+  </script>
+
+</body>
+</html>
