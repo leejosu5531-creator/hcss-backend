@@ -1,0 +1,741 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>할렐루야 찬양대 좌석 배치</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { 
+      font-family: '맑은 고딕', 'Malgun Gothic', sans-serif; 
+      padding: 12px; 
+      background: #f8f9fa; 
+      margin: 0; 
+      color: #333;
+    }
+
+    .card { 
+      background: white; 
+      padding: 20px; 
+      border-radius: 12px; 
+      box-shadow: 0 4px 12px rgba(0,0,0,0.08); 
+      max-width: 800px; 
+      width: 100%;
+      margin: auto; 
+    }
+
+    h2 {
+      margin: -20px -20px 16px -20px;   /* .card의 20px 패딩 바깥까지 배경이 꽉 차게 */
+      padding: 16px 20px;
+      background: linear-gradient(135deg, #2c3e6b, #4a63b5);
+      color: #fff;
+      border-radius: 12px 12px 0 0;     /* .card의 위쪽 모서리(12px)와 맞춤 */
+      font-size: 1.35rem;
+      text-align: center;
+      word-break: keep-all;
+    }
+
+    .form-group { 
+      display: flex; 
+      align-items: center; 
+      gap: 10px; 
+      margin-bottom: 12px; 
+      flex-wrap: wrap; 
+    }
+    
+    .form-group-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .input-label { 
+      font-size: 14px; 
+      font-weight: bold; 
+      color: #495057; 
+      white-space: nowrap; 
+    }
+
+    input[type="date"], input[type="number"] { 
+      padding: 8px 10px; 
+      font-size: 15px; 
+      border-radius: 6px; 
+      border: 1px solid #ced4da; 
+    }
+    
+    input[type="date"] { flex: 1; min-width: 130px; }
+    input[type="number"] { width: 70px; text-align: center; }
+
+    .checkbox-group { 
+      display: flex; 
+      align-items: center; 
+      gap: 6px; 
+      font-size: 13px; 
+      color: #666; 
+      margin-bottom: 15px; 
+      cursor: pointer;
+    }
+
+    .button-row, .edit-toolbar { 
+      display: flex; 
+      gap: 8px; 
+      flex-wrap: wrap; 
+      margin-bottom: 12px;
+    }
+
+    button { 
+      padding: 10px 14px; 
+      font-size: 14px; 
+      border-radius: 6px; 
+      border: none; 
+      background: #007bff; 
+      color: white; 
+      font-weight: bold; 
+      cursor: pointer; 
+      flex: 1 1 auto; 
+      min-width: 120px;
+      text-align: center;
+      transition: background-color 0.2s, opacity 0.2s;
+    }
+    button:hover:not(:disabled) { background: #0056b3; }
+    button:disabled { background: #99c2ff; cursor: not-allowed; opacity: 0.7; }
+    button.secondary { background: #2e9e5b; }               /* 초록 계열: "실행"(파랑)과 구분되는 "완료·저장" 느낌 */
+    button.secondary:hover:not(:disabled) { background: #25823f; }
+    button.secondary:disabled { background: #a8d5bb; }       /* 비활성 상태도 초록 계열로 은은하게 */
+    /* 마우스로 누르고 있는 동안(PC): 즉시 눌린 느낌 */
+    button:active:not(:disabled) { transform: scale(0.95); filter: brightness(0.85); }
+    /* 터치(모바일)에서도 확실히 보이도록 JS로 잠깐 붙였다 떼는 클래스.
+       iOS Safari는 :active만으로는 탭 피드백이 잘 안 보일 때가 많아 이 방식이 더 확실하다. */
+    button.btn-clicked { transform: scale(0.95); filter: brightness(0.85); }
+
+    .edit-status { 
+      display: none; 
+      margin: 8px 0; 
+      padding: 10px 12px; 
+      border-radius: 7px; 
+      background: #fff3cd; 
+      color: #664d03; 
+      font-size: 13px; 
+      line-height: 1.4;
+    }
+    .edit-status.on { display: block; }
+
+    .info-box { 
+      background: #e7f5ff; 
+      padding: 12px; 
+      border-radius: 8px; 
+      margin-bottom: 15px; 
+      border: 1px solid #74c0fc; 
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    /* 열별 [N열] 인원 배지: 글자색만 있을 때보다 눈에 띄도록 배경색을 채운 알약 모양으로 강조 */
+    .row-badge {
+      display: inline-block;
+      background: #dbe9ff;
+      color: #2b5ca8;
+      padding: 1px 7px;
+      border-radius: 10px;
+      font-size: 12px;
+    }
+
+    .drag-stage { margin-top: 10px; }
+    .drag-row { 
+      margin: 8px 0; 
+      padding: 8px; 
+      background: #f1f3f5; 
+      border-radius: 8px; 
+    }
+    .drag-row-title { 
+      font-weight: 800; 
+      margin-bottom: 6px; 
+      font-size: 12px; 
+      color: #495057;
+    }
+    .drag-zone { 
+      display: flex; 
+      flex-wrap: wrap; 
+      gap: 6px; 
+      min-height: 40px; 
+    }
+    
+    /* 일반 좌석 및 성도석 박스 공통 규격 정의 */
+    .drag-seat { 
+      flex: 0 0 auto;
+      width: calc(100% / 8 - 6px);
+      min-width: 50px;
+      height: 42px; 
+      padding: 4px; 
+      box-sizing: border-box; 
+      border-radius: 6px; 
+      display: flex; 
+      align-items: center; 
+      justify-content: center; 
+      text-align: center; 
+      font-size: 11px; 
+      font-weight: 700; 
+      background: #fff; 
+      border: 1px solid #ced4da; 
+      user-select: none; 
+      touch-action: none;
+      word-break: keep-all;
+    }
+
+    .drag-seat.S { background: #fff3a6; border-color: #e0c400; color: #856404; }
+    .drag-seat.A { background: #f6b26b; border-color: #d88a2d; color: #4e2600; }
+    .drag-seat.T { background: #9fc5e8; border-color: #5b9bd5; color: #004085; }
+    .drag-seat.B { background: #b6d7a8; border-color: #6aa84f; color: #155724; }
+    .drag-seat.ORG { background: #e9ecef; color: #6c757d; cursor: not-allowed; border-color: #adb5bd; }
+    
+    /* 성도석: 일반 좌석규격 그대로 사용하되 색상만 연분홍으로 구분 */
+    .drag-seat.SUNGDO { background: #fff5f5; border-color: #f0b8b8; color: #9b2226; cursor: default; }
+    
+    .drag-seat.draggable { cursor: grab; }
+    .drag-seat.dragging { opacity: 0.4; }
+    .drag-seat.valid-target { outline: 3px solid #20c997; outline-offset: 1px; }
+
+    @media (max-width: 600px) and (orientation: portrait) {
+      body { padding: 6px; }
+      .card { padding: 12px; border-radius: 8px; }
+      h2 { font-size: 1.15rem; }
+      .form-group { flex-direction: column; align-items: stretch; gap: 8px; }
+      .form-group-item { width: 100%; justify-content: space-between; }
+      input[type="date"] { width: 100%; }
+      button { padding: 12px 8px; font-size: 13px; min-width: 45%; }
+      .drag-zone { gap: 4px; }
+      .drag-seat { 
+        width: calc(100% / 6 - 4px); 
+        min-width: 42px; 
+        height: 36px; 
+        font-size: 10px; 
+        padding: 2px; 
+      }
+    }
+
+    @media (max-width: 900px) and (orientation: landscape) {
+      body { padding: 4px; }
+      .card { padding: 8px; max-width: 100%; }
+      h2 { font-size: 1rem; margin-bottom: 6px; }
+      .form-group, .checkbox-group, .button-row, .edit-toolbar { margin-bottom: 6px; gap: 4px; }
+      .info-box { padding: 6px 8px; margin-bottom: 6px; font-size: 11px; }
+      button { padding: 6px 8px; font-size: 12px; min-width: auto; }
+      input[type="date"], input[type="number"] { padding: 4px 6px; font-size: 12px; }
+      .drag-stage { margin-top: 4px; }
+      .drag-row { margin: 3px 0; padding: 3px 6px; border-radius: 4px; }
+      .drag-row-title { font-size: 10px; margin-bottom: 2px; }
+      .drag-zone { gap: 3px; min-height: 26px; }
+      .drag-seat { 
+        width: calc(100% / 18 - 3px); 
+        min-width: 32px; 
+        height: 26px; 
+        font-size: 10px; 
+        padding: 1px; 
+        border-radius: 4px;
+      }
+    }
+
+    @media print {
+      body { background: white; padding: 0; }
+      .no-print { display: none !important; }
+      .card { box-shadow: none; max-width: 100%; padding: 0; }
+    }
+  </style>
+
+  <!-- PC 환경 반응형 고정 크기 (일반 좌석 & 성도석 동일 적용) -->
+  <style id="hcss-pc-v9">
+    @media (min-width:901px){
+      .drag-zone{
+        flex-wrap:nowrap !important;
+        overflow-x:hidden !important;
+        overflow-y:hidden;
+        width:100%;
+        gap:3px;
+      }
+      .drag-seat{
+        flex:1 1 0 !important;
+        width:auto !important;
+        min-width:0 !important;
+        max-width:none !important;
+        height:36px !important;
+        padding:2px 1px !important;
+        font-size:10px !important;
+        line-height:1 !important;
+        white-space:nowrap;
+        overflow:hidden;
+        text-overflow:clip;
+      }
+      .drag-row{
+        width:100%;
+        box-sizing:border-box;
+        padding:5px 6px;
+        margin:4px 0;
+      }
+      .drag-row-title{
+        font-size:10px;
+        margin-bottom:3px;
+      }
+
+      /* 성도석은 인원이 몇 명이든(1~4열처럼 나눠 채워지지 않으므로) 1열 기준
+         18칸 폭으로 고정해, 일반 좌석과 이름 한 명당 크기가 같아 보이게 한다.
+         (전에는 flex:1로 인원수만큼 균등폭을 잡다 보니 인원이 적을수록 칸이
+         커 보였다) 18칸을 넘으면 자동으로 다음 줄로 넘어간다. */
+      .sd-row .drag-zone{ flex-wrap:wrap !important; }
+      .sd-row .drag-seat{
+        flex:0 0 auto !important;
+        width:calc((100% - 3px * 17) / 18) !important;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h2>🎵 할렐루야 찬양대 좌석 배치</h2>
+    
+    <div class="form-group no-print">
+      <input type="date" id="dateInput">
+      <div class="form-group-item">
+        <span class="input-label">찬양대석 정원</span>
+        <input type="number" id="seatsInput" placeholder="67" min="60" max="70" value="67">
+      </div>
+    </div>
+
+    <div class="button-row no-print">
+      <button id="runBtn" onclick="run()">좌석 자동배치 실행</button>
+      <button class="secondary" id="saveBtn" onclick="saveCurrentLayout()" disabled>💾 조정 완료·저장</button>
+    </div>
+
+    <div id="editStatus" class="edit-status no-print"></div>
+    <div id="result" style="margin-top:10px;"></div>
+  </div>
+
+<script>
+const API_URL = "https://hcss-backend.onrender.com/api/allocate";
+const API_BASE = "https://hcss-backend.onrender.com";
+
+function sleep(ms){ return new Promise(res => setTimeout(res, ms)); }
+
+/*
+ * Render 무료 서버는 한동안 요청이 없으면 잠들고, 다시 깨어나는 데 30~60초, 가끔 그 이상
+ * 걸릴 수 있다. 그동안은 연결이 끊기거나(브라우저에는 "Failed to fetch"로 보임) 502/503으로
+ * 응답한다. 또 서버가 구글 API를 부르는 도중 순간적으로 끊기는 경우도 있다.
+ * 예전에는 재시도를 몇 번만(총 7~8초) 하고 포기해서, 실제로는 서버가 곧 깨어나는 중인데도
+ * 화면에는 "failed to fetch" 오류로 떠 버렸다. 이제 최대 약 60초 동안 자동으로 재시도해서,
+ * 콜드스타트가 끝날 때까지 웬만하면 화면엔 "깨어나는 중입니다" 안내만 보이고 결국 성공하게 했다.
+ * 서버가 정상적으로 응답한 진짜 오류(400 등)는 재시도하지 않고 바로 올린다.
+ */
+async function fetchWithRetry(path, options, {retries=6, onRetry=null}={}){
+  let lastErr=null;
+  for(let attempt=0; attempt<=retries; attempt++){
+    try{
+      const res = await fetch(API_BASE + path, options);
+      if([502,503,504].includes(res.status)){
+        lastErr = new Error(`서버가 아직 깨어나는 중입니다 (HTTP ${res.status})`);
+      }else{
+        return res;   // 2xx든 4xx/5xx(진짜 오류)든, 서버가 응답했다면 그대로 돌려준다
+      }
+    }catch(ex){
+      lastErr = ex;   // TypeError: Failed to fetch, 타임아웃 등 네트워크 자체 실패
+    }
+    if(attempt < retries){
+      if(onRetry) onRetry(attempt+1, retries);
+      await sleep(Math.min(3000 * (attempt+1), 15000));   // 3,6,9,12,15,15초 간격 (총 대기 약 60초)
+    }
+  }
+  throw lastErr;
+}
+
+let serverRows = null;
+let manualRows = null;
+let dragSource = null;
+let pointerSource = null;
+let longPressTimer = null;
+let currentMeta = null;
+let savedLayoutAt = null;
+let manualSungdoseok = [];   // 성도석 인원 [[part,name], ...] — 다른 좌석과 동일하게 드래그로 맞바꿀 수 있다
+
+function flattenSD(sd){
+  const out = [];
+  ["S","A","T","B"].forEach(p => (Array.isArray(sd?.[p]) ? sd[p] : []).forEach(n => n && out.push([p, String(n)])));
+  return out;
+}
+
+function esc(v){
+  return String(v ?? "").replace(/[&<>"']/g, c =>
+    ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function cloneRows(rows){
+  return (rows || []).map(row => (row || []).map(x => [x[0],x[1]]));
+}
+
+function setEditButtons(hasData){
+  const save = document.getElementById("saveBtn");
+  if(save) save.disabled = !hasData;
+}
+
+function status(msg, on=true){
+  const el = document.getElementById("editStatus");
+  el.textContent = msg;
+  el.classList.toggle("on", on);
+}
+
+// 좌석 박스(.drag-seat.S/.A/.T/.B)와 같은 색으로 맞춰서, 열별 인원 내역을 봐도
+// 어느 파트인지 바로 연결해서 알아볼 수 있게 한다.
+const PART_TEXT_COLOR = { S: "#a17a00", A: "#c1690e", T: "#1c6fc9", B: "#3f8f3f" };
+
+function buildCountSummary(data){
+  const p = data.attending_by_part || {};
+  const rc = data.row_part_counts || [];
+  const sd = data.sungdoseok || {};
+  const sdTotal = Object.values(sd).reduce((a,v) => a + (Array.isArray(v) ? v.length : 0), 0);
+  const att = data.attending_count || 0;
+  let h = `<div class="info-box" id="countSummary">`;
+  // "오르간 1석"은 총원 계산 근거로만 곁들이는 문구라 강조(굵게)하지 않는다.
+  h += `<div><strong>📅 ${esc(data.date)}</strong> · <strong>👥 총 ${att}명</strong> + <span style="font-weight:normal;">오르간 1석</span> = <strong>${att+1}명</strong> (파트별: S${p.S||0}/A${p.A||0}/T${p.T||0}/B${p.B||0})</div>`;
+  h += `<div style="margin-top:2px;"><strong>열별:</strong> `;
+  rc.forEach((r,i)=>{
+    const items = [];
+    for(const part of ["S","A","T","B"]){
+      if((r[part]||0)>0) items.push(`<span style="color:${PART_TEXT_COLOR[part]}; font-weight:700;">${part}${r[part]}</span>`);
+    }
+    if((r.ORG||0)>0) items.push(`오르간`);
+    if(items.length) h += `<span style="margin-right:8px; display:inline-block;"><span class="row-badge">[${i+1}열] ${(r.S||0)+(r.A||0)+(r.T||0)+(r.B||0)+(r.ORG||0)}명</span> (${items.join("/")})</span>`;
+  });
+  h += `</div>`;
+  // 성도석 이동 인원이 있을 때는 여기(정보란)엔 아무것도 표시하지 않는다.
+  // 이름은 배치도 맨 아래 [성도석] 칸에서만 보여준다. 없을 때만 "없음"으로 안내한다.
+  if(!sdTotal){
+    h += `<div style="margin-top:2px;"><strong>성도석 이동:</strong> 없음</div>`;
+  }
+  h += `</div>`;
+  return h;
+}
+
+function renderEditable(rows, summaryHtml = ""){
+  const result = document.getElementById("result");
+  if(!rows) return;
+
+  // 성도석 명단에 남아있는 이름이 실수로 좌석에도 같이 들어있는 경우를 대비한 안전장치
+  // (정상적인 흐름에서는 교환(exchange)으로만 이동하므로 겹칠 일이 없다)
+  const sdSet = new Set(manualSungdoseok.map(x => String(x[1])));
+
+  let out = '<div class="drag-stage">';
+  rows.forEach((row, r) => {
+    out += `<div class="drag-row"><div class="drag-row-title">[${r+1}열]</div><div class="drag-zone" data-row="${r}">`;
+    row.forEach((item, i) => {
+      const part = item[0], name = item[1], org = part === "ORG";
+      if (!org && sdSet.has(String(name))) return;
+      out += `<div class="drag-seat ${esc(part)} ${org ? '' : 'draggable'}" data-row="${r}" data-index="${i}" ${org ? '' : 'draggable="true"'}>${org ? '오르간' : esc(name)}</div>`;
+    });
+    out += '</div></div>';
+  });
+
+  // 성도석: 정원 초과로 오늘 못 앉은 인원. 다른 좌석과 똑같이 드래그로 자리를 맞바꿀 수 있다.
+  if(manualSungdoseok.length > 0){
+    out += `<div class="drag-row sd-row"><div class="drag-row-title">[성도석]</div><div class="drag-zone" data-row="SD">`;
+    manualSungdoseok.forEach((item, i) => {
+      out += `<div class="drag-seat ${esc(item[0])} SUNGDO draggable" data-row="SD" data-index="${i}" draggable="true">${esc(item[1])}</div>`;
+    });
+    out += '</div></div>';
+  }
+  out += '</div>';
+
+  const existingSummary = document.getElementById("countSummary");
+  const finalSummary = summaryHtml || (existingSummary ? existingSummary.outerHTML : "");
+
+  result.innerHTML = finalSummary + out;
+  bindDnD();   // 데이터가 있으면 항상 바로 드래그로 조정할 수 있게 한다 (별도 "수동 조정" 모드 없음)
+}
+
+// r은 "0"~"3"(좌석 열) 또는 "SD"(성도석)를 나타내는 문자열이다.
+function getItem(r, i){
+  if(r === "SD") return manualSungdoseok[i] || null;
+  return manualRows?.[Number(r)]?.[i] || null;
+}
+
+function setItem(r, i, val){
+  if(r === "SD") manualSungdoseok[i] = val;
+  else manualRows[Number(r)][i] = val;
+}
+
+function validMove(fr, fi, tr, ti){
+  const a = getItem(fr, fi), b = getItem(tr, ti);
+  if(!a || !b) return false;
+  if(a[0] === "ORG" || b[0] === "ORG") return false;
+  return !(fr === tr && fi === ti);
+}
+
+function clearHighlights(){
+  document.querySelectorAll(".drag-seat").forEach(el => {
+    el.classList.remove("valid-target", "dragging");
+  });
+}
+
+function highlight(){
+  clearHighlights();
+  if(!dragSource) return;
+  document.querySelectorAll(".drag-seat").forEach(el => {
+    const r = el.dataset.row, i = +el.dataset.index;
+    if(validMove(dragSource.r, dragSource.i, r, i))
+      el.classList.add("valid-target");
+  });
+}
+
+function exchange(fr, fi, tr, ti){
+  if(!validMove(fr, fi, tr, ti)){
+    status("⚠ 오르간석을 제외한 좌석끼리만 교환할 수 있습니다.");
+    return;
+  }
+  const a = getItem(fr, fi), b = getItem(tr, ti);
+  setItem(fr, fi, b);
+  setItem(tr, ti, a);
+  renderEditable(manualRows);
+  status("✏️ 좌석을 교환했습니다.");
+}
+
+function bindDnD(){
+  document.querySelectorAll('.drag-seat[draggable="true"]').forEach(el => {
+    el.addEventListener("dragstart", e => {
+      dragSource = {r: el.dataset.row, i: +el.dataset.index};
+      el.classList.add("dragging");
+      e.dataTransfer.effectAllowed = "move";
+      e.dataTransfer.setData("text/plain", "HCSS");
+      highlight();
+    });
+    el.addEventListener("dragend", () => {
+      clearHighlights();
+      dragSource = null;
+    });
+    el.addEventListener("dragover", e => {
+      if(!dragSource) return;
+      const r = el.dataset.row, i = +el.dataset.index;
+      if(validMove(dragSource.r, dragSource.i, r, i)){
+        e.preventDefault();
+        el.classList.add("valid-target");
+      }
+    });
+    el.addEventListener("drop", e => {
+      e.preventDefault();
+      if(!dragSource) return;
+      const from = {...dragSource};
+      exchange(from.r, from.i, el.dataset.row, +el.dataset.index);
+      clearHighlights();
+      dragSource = null;
+    });
+
+    el.addEventListener("pointerdown", e => {
+      if(e.pointerType === "mouse") return;
+      pointerSource = {r: el.dataset.row, i: +el.dataset.index};
+      clearTimeout(longPressTimer);
+      longPressTimer = setTimeout(() => {
+        dragSource = pointerSource;
+        highlight();
+        status("📱 이동할 목적지 좌석을 터치하세요.");
+      }, 350);
+    });
+  });
+}
+
+document.addEventListener("pointerup", e => {
+  clearTimeout(longPressTimer);
+  if(e.pointerType === "mouse" || !dragSource) return;
+  const target = document.elementFromPoint(e.clientX, e.clientY)?.closest?.(".drag-seat");
+  const from = {...dragSource};
+  if(target) exchange(from.r, from.i, target.dataset.row, +target.dataset.index);
+  clearHighlights();
+  dragSource = null;
+  pointerSource = null;
+});
+
+async function saveLayoutToServer() {
+  const dateInput = document.getElementById("dateInput").value;
+  const seatsInput = parseInt(document.getElementById("seatsInput").value) || 67;
+
+  if (!manualRows || !dateInput) {
+    throw new Error("저장할 좌석 데이터 또는 날짜가 유효하지 않습니다.");
+  }
+
+  const payload = {
+    date_str: dateInput,
+    total_seats: seatsInput,
+    rows: manualRows
+  };
+
+  const response = await fetchWithRetry("/api/layout/save", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  }, { onRetry: (n, max) => status(`☁️ 서버가 깨어나는 중입니다. 저장을 다시 시도합니다... (${n}/${max})`) });
+
+  const data = await response.json();
+  if (!response.ok || data.status !== "success") {
+    throw new Error(data.detail || data.message || "수동배치 저장에 실패했습니다.");
+  }
+
+  savedLayoutAt = data.saved_at || new Date().toISOString();
+  currentMeta = { date_str: dateInput, total_seats: seatsInput };
+  return data;
+}
+
+async function loadSavedLayout(showStatus=true){
+  const date = document.getElementById("dateInput").value;
+  const seats = parseInt(document.getElementById("seatsInput").value) || 67;
+  const resultDiv = document.getElementById("result");
+  if(!date) return false;
+  try{
+    if(showStatus) status("☁️ 저장된 배치를 확인하는 중...");
+    const r = await fetchWithRetry("/api/layout/load", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Cache-Control": "no-cache" },
+      body: JSON.stringify({ date_str: date, total_seats: seats, rows: [] })
+    }, { onRetry: (n, max) => { if(showStatus) status(`☁️ 서버가 깨어나는 중입니다. 다시 확인합니다... (${n}/${max})`); } });
+    const data = await r.json();
+
+    // 서버가 정상 응답했는데 "저장한 적 없음"인 경우에만 이 안내를 보여준다.
+    // (재시도까지 다 실패한 경우는 아래 catch로 빠져서 별도 오류로 안내한다)
+    if(data.status === "not_found"){
+      resultDiv.innerHTML = "";
+      setEditButtons(false);
+      if(showStatus) status("해당 날짜에 저장된 배치가 없습니다. 「좌석 자동배치 실행」을 눌러 주세요.", true);
+      return false;
+    }
+    if(!r.ok || data.status !== "success" || !Array.isArray(data.rows)){
+      throw new Error(data.detail || "저장된 배치를 불러오지 못했습니다.");
+    }
+
+    const n = Number(data.total_seats || seats);
+    document.getElementById("seatsInput").value = n;
+    currentMeta = { date_str: date, total_seats: n };
+    serverRows = cloneRows(data.rows);
+    manualRows = cloneRows(data.rows);
+    manualSungdoseok = flattenSD(data.sungdoseok);
+    savedLayoutAt = data.saved_at || null;
+    setEditButtons(true);
+
+    const summaryHtml = buildCountSummary(data);
+    renderEditable(serverRows, summaryHtml);   // renderEditable이 항상 드래그를 바로 활성화한다
+
+    // 저장 당시 출석 인원과 방금 다시 읽은 현재 출석 인원이 다르면, 서버가 그 사실을
+    // attendance_warning으로 알려준다. 이땐 "정상적으로 불러왔다"는 문구보다
+    // 이 경고를 먼저 보여준다 — 배치가 지금 출석 상황과 다를 수 있다는 뜻이라서다.
+    if(showStatus){
+      if(data.attendance_warning){
+        status(`☁️ 저장된 배치를 불러왔습니다. ${data.attendance_warning}`, true);
+      }else{
+        status("☁️ 저장된 배치를 불러왔습니다. 바로 드래그로 좌석을 조정할 수 있습니다.");
+      }
+    }
+    return true;
+
+  }catch(ex){
+    console.error(ex);
+    // 서버가 아예 응답하지 못했거나(네트워크/콜드스타트) 진짜 오류인 경우.
+    // "저장된 배치가 없다"고 단정하지 않는다 — 있는데도 일시적으로 못 읽어온 것일 수 있다.
+    if(showStatus) status(`❌ 저장된 배치를 확인하지 못했습니다: ${ex.message || "서버에 연결할 수 없습니다"}. 잠시 후 자동으로 다시 시도하거나, 날짜를 다시 선택해 보세요.`, true);
+    return false;
+  }
+}
+
+async function saveCurrentLayout(){
+  if(!manualRows || !currentMeta){
+    status("⚠ 저장할 좌석 배치가 없습니다.", true);
+    return;
+  }
+  const btn = document.getElementById("saveBtn");
+  if(btn) btn.disabled = true;
+  try{
+    await saveLayoutToServer();
+    serverRows = cloneRows(manualRows);
+    setEditButtons(true);
+    status(`💾 조정 완료 · 현재 배치를 Google에 저장했습니다${savedLayoutAt ? ` · ${new Date(savedLayoutAt).toLocaleString("ko-KR")}` : ""}`);
+    renderEditable(serverRows);   // 저장 후에도 계속 드래그로 조정할 수 있다
+  }catch(e){
+    status(`❌ 저장 실패: ${e.message}`, true);
+  }finally{
+    if(btn) btn.disabled = false;
+  }
+}
+
+async function run(){
+  const resultDiv = document.getElementById("result");
+  const runBtn = document.getElementById("runBtn");
+  const selectedDate = document.getElementById("dateInput").value;
+  const totalSeats = parseInt(document.getElementById("seatsInput").value) || 67;
+  if(totalSeats < 60 || totalSeats > 70){ status("⚠ 찬양대석 정원은 60~70명으로 입력해 주세요.", true); return; }
+
+  localStorage.setItem("lastTotalSeats", totalSeats);
+  runBtn.disabled = true;
+  setEditButtons(false);
+  status("", false);
+  resultDiv.innerHTML = "<p style='color:#007bff;font-weight:bold;'>⏳ 출석부를 읽어 좌석을 배치 중입니다...</p>";
+
+  try{
+    const response = await fetchWithRetry("/api/allocate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        date_str: selectedDate,
+        total_seats: totalSeats,
+        balance_rule: "1=2>=3>=4",
+        force_refresh: true   // 자동배치는 항상 구글 스프레드시트를 새로 읽어온다
+      })
+    }, { onRetry: (n, max) => { resultDiv.innerHTML = `<p style='color:#007bff;font-weight:bold;'>⏳ 서버가 깨어나는 중입니다. 다시 시도합니다... (${n}/${max})</p>`; } });
+
+    const data = await response.json();
+    if(!response.ok) throw new Error(data.detail || "알 수 없는 서버 오류");
+
+    serverRows = cloneRows(data.rows);
+    manualRows = cloneRows(data.rows);
+    manualSungdoseok = flattenSD(data.sungdoseok);
+    currentMeta = { date_str: selectedDate, total_seats: totalSeats };
+    savedLayoutAt = null;
+
+    const summaryHtml = buildCountSummary(data);
+    renderEditable(serverRows, summaryHtml);   // renderEditable이 항상 드래그를 바로 활성화한다
+
+    if(data.code_version || data.data_source){
+      let diag = "";
+      if(data.data_source) diag += `${esc(data.data_source)} (${data.refresh_mode === "force" ? "새로고침" : "캐시"})`;
+      if(data.code_version) diag += (diag ? " · " : "") + `서버 버전: ${esc(data.code_version)}`;
+      resultDiv.insertAdjacentHTML("beforeend",
+        `<p class="no-print" style="margin-top:6px;font-size:10px;color:#adb5bd;text-align:right">${diag}</p>`);
+    }
+
+    setEditButtons(true);
+    status("자동배치 완료. 좌석을 바로 드래그해 조정한 뒤 「조정 완료·저장」을 눌러주세요.");
+  }catch(error){
+    resultDiv.innerHTML = `<p style="color:red"><strong>오류:</strong> ${esc(error.message)}</p>`;
+    setEditButtons(false);
+    document.getElementById("saveBtn").disabled = true;
+  }finally{
+    runBtn.disabled = false;
+  }
+}
+
+// 버튼을 누르는 순간(마우스 클릭이든 터치든) 확실하게 "눌렀다"는 표시가 보이도록,
+// 클릭된 버튼에 잠깐 btn-clicked 클래스를 붙였다가 뗀다. (:active 만으로는
+// iOS Safari 등에서 피드백이 거의 안 보이는 경우가 많아 이렇게 보강한다)
+document.addEventListener("click", (e) => {
+  const btn = e.target.closest("button");
+  if(!btn) return;
+  btn.classList.remove("btn-clicked");
+  void btn.offsetWidth;              // 리플로우를 강제해 같은 버튼을 연타해도 효과가 다시 보이게 함
+  btn.classList.add("btn-clicked");
+  setTimeout(() => btn.classList.remove("btn-clicked"), 180);
+}, true);
+// iOS Safari는 body에 터치 이벤트 리스너가 하나라도 없으면 :active 가상클래스 자체가
+// 아예 작동하지 않는 것으로 알려진 오래된 버그가 있어, 빈 리스너로 활성화해 둔다.
+document.body.addEventListener("touchstart", () => {}, {passive: true});
+
+document.addEventListener("DOMContentLoaded", () => {
+  const d = document.getElementById("dateInput");
+  if(d){
+    const x = new Date();
+    d.value = `${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,"0")}-${String(x.getDate()).padStart(2,"0")}`;
+    d.addEventListener("change", () => loadSavedLayout(true));
+    setTimeout(() => loadSavedLayout(true), 300);
+  }
+});
+</script>
+</body>
+</html>
